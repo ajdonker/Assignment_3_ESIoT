@@ -25,13 +25,13 @@ unsigned long lastPublishTime = 0;
 unsigned long lastRecvTime = 0;
 char msg[MSG_BUFFER_SIZE];
 int value = 0;
-const unsigned long FREQ = 10000;
+const unsigned long FREQ = 4000;
 const unsigned long TIMEOUT_TIME = 20000;
-const uint8_t GREEN_LED_PIN = 2;
-const uint8_t RED_LED_PIN = 15;
-const uint8_t TRIG_PIN = 13;
-const uint8_t ECHO_PIN = 35;
-Sonar sonar(ECHO_PIN, TRIG_PIN, 20000);
+const uint8_t GREEN_LED_PIN = 23;
+const uint8_t RED_LED_PIN = 22;
+const uint8_t TRIG_PIN = 21;
+const uint8_t ECHO_PIN = 19;
+Sonar sonar(ECHO_PIN, TRIG_PIN, 30000);
 void setup_wifi() {
   delay(10);
   Serial.println(String("Connecting to ") + ssid);
@@ -88,25 +88,25 @@ void setup() {
     pinMode(RED_LED_PIN,OUTPUT);
     pinMode(GREEN_LED_PIN,OUTPUT);
     //pSonar = new Sonar(ECHO_PIN,TRIG_PIN,20000);
-    int n = WiFi.scanNetworks();
-    Serial.println("Scan done.");
-    if (n == 0) {
-        Serial.println("no networks found");
-    } else {
-      Serial.print(n);
-      Serial.println(" networks found");
-      for (int i = 0; i < n; ++i) {
-        // Print SSID and RSSI for each network found
-        Serial.print(i + 1);
-        Serial.print(": ");
-        Serial.print(WiFi.SSID(i));
-        Serial.print(" (");
-        Serial.print(WiFi.RSSI(i));
-        Serial.print(")");
-        Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" ":"*");
-        delay(10);
-      }
-  }
+  //   int n = WiFi.scanNetworks();
+  //   Serial.println("Scan done.");
+  //   if (n == 0) {
+  //       Serial.println("no networks found");
+  //   } else {
+  //     Serial.print(n);
+  //     Serial.println(" networks found");
+  //     for (int i = 0; i < n; ++i) {
+  //       // Print SSID and RSSI for each network found
+  //       Serial.print(i + 1);
+  //       Serial.print(": ");
+  //       Serial.print(WiFi.SSID(i));
+  //       Serial.print(" (");
+  //       Serial.print(WiFi.RSSI(i));
+  //       Serial.print(")");
+  //       Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" ":"*");
+  //       delay(10);
+  //     }
+  // }
 }
 
 void loop() {
@@ -125,8 +125,8 @@ void loop() {
   if (now - lastPublishTime > FREQ) {
     lastPublishTime = now;
 
-    long d = sonar.getDistance();
-    snprintf(msg, MSG_BUFFER_SIZE, "distance=%ld", d);
+    float d = sonar.getDistance();
+    snprintf(msg, MSG_BUFFER_SIZE, "distance=%.3f", d);
 
     if (client.publish(topic, msg)) {
       state = TmsState::NORMAL;   // sending OK
