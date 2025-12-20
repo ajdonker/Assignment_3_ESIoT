@@ -7,7 +7,7 @@ import paho.mqtt.client as mqtt
 # ---------------- CONFIG ----------------
 
 SERIAL_PORT = "/dev/ttyACM0"
-SERIAL_BAUD = 9600
+SERIAL_BAUD = 115200
 
 MQTT_BROKER = "broker.mqtt-dashboard.com"
 MQTT_SUB_TOPIC = "esiot-2025/blagoja"
@@ -44,10 +44,12 @@ def on_message(client, userdata, msg):
     if msg.topic == MQTT_SUB_TOPIC and payload.startswith("distance="):
         dist = payload.split("=")[1]
         ser.write(f"DIST:{dist}\n".encode())
+        ser.flush()
 
     # Direct command forwarding
     if msg.topic == MQTT_CMD_TOPIC:
         ser.write((payload + "\n").encode())
+        ser.flush()
 
 # ---------- CLI INPUT THREAD ----------
 
