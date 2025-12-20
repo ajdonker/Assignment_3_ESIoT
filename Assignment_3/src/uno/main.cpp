@@ -43,25 +43,44 @@ bool buttonPressedOnce() {
 ServoMotor *pMotor;
 Potentiometer *pPot;
 LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27,20,4); 
+
+__FlashStringHelper* stateToFString(WcsState s) {
+  switch (s) {
+    case WcsState::MANUAL:
+      return F("MANUAL");
+    case WcsState::UNCONNECTED:
+      return F("UNCONNECTED");
+    default:
+      return F("AUTOMATIC");
+  }
+}
+WcsState stringToState(const String& s) {
+  if (s.equalsIgnoreCase("AUTOMATIC")) return WcsState::AUTOMATIC;
+  if (s.equalsIgnoreCase("MANUAL")) return WcsState::MANUAL;
+  if (s.equalsIgnoreCase("UNCONNECTED")) return WcsState::UNCONNECTED;
+  
+  return WcsState::UNCONNECTED; 
+}
 void onWcsStateChangedHandler(WcsState s){
   lcd.clear();
   lcd.print("STATE:");
+  Serial.print("STATE:");
   switch (s)
   {
   case WcsState::MANUAL:
     lcd.print("MANUAL");
     Serial.println("MANUAL");
-    //Serial.flush();
+    Serial.flush();
     break;
   case WcsState::UNCONNECTED:
     lcd.print("UNCONNECTED");
     Serial.println("UNCONNECTED");
-    //Serial.flush();
+    Serial.flush();
     break;
   default:
     lcd.print("AUTOMATIC");
     Serial.println("AUTOMATIC");
-    //Serial.flush();
+    Serial.flush();
     break;
   } 
 }
@@ -87,14 +106,25 @@ void handleSerial()
     lcd.setCursor(2,2);
     lcd.print("Water level:");
     lcd.print(waterLevel);
+    Serial.print("LEVEL:");
+    Serial.println(waterLevel);
+    // remove echo of water level after sensor works properly 
     lastRecvTime = millis();
 
     if (state == WcsState::UNCONNECTED) {
       setState(WcsState::AUTOMATIC);
     }
   }
-  else if (msg == "UNCONNECTED") {
-    setState(WcsState::UNCONNECTED);
+  else if (msg.startsWith("MODE:")){
+    String stateStr = msg.substring(5);
+    stateStr.trim(); // remove any whitespace/newline
+    WcsState newState = stringToState(stateStr);
+    lcd.clear();
+    lcd.print("State:");
+    lcd.print(stateToFString(newState));
+
+    setState(newState); 
+    
   }
   //lcd.clear();
   // lcd.print("State:");
