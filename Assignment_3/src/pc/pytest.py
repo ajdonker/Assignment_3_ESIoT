@@ -9,8 +9,11 @@ from flask import Flask, jsonify, request
 app = Flask(__name__)
 system_state = {
     "state": "AUTOMATIC",
+    "state_requested": None,
     "water_level": None,
-    "motor": 0
+    "motor": 0,
+    "control": "POT",
+    "control_requested": None
 }
 ser_lock = threading.Lock()
 
@@ -26,17 +29,30 @@ def set_mode():
     mode = request.json.get("mode")
     if mode in ["AUTOMATIC", "MANUAL"]:
         ser_send(f"MODE:{mode}")
-        system_state["state"] = mode
-        return jsonify({"ok": True, "requested:": mode})
+        #system_state["state"] = mode wait for uno R-R to confirm state 
+        system_state["state_requested"] = mode
+        return jsonify(ok = True, requested = mode)
     return jsonify({"error": "invalid mode"}), 400
 @app.route("/motor", methods=["POST"])
 def set_motor():
-    pos = int(request.json.get("position", -1))
-    if 0 <= pos <= 90:
-        ser_send(f"MOTOR:{pos}")
-        system_state["motor"] = pos
-        return jsonify({"ok": True})
-    return jsonify({"error": "invalid position"}), 400
+    if system_state.get("state") == "MANUAL" and system_state.get("control") == "REMOTE":
+        pos = int(request.json.get("position", -1))
+        # check that the GUI slider converts 0-100 into 0-90 
+        if 0 <= pos <= 90:
+            ser_send(f"MOTOR:{pos}")
+            system_state["motor"] = pos
+            return jsonify({"ok": True})
+        return jsonify({"error": "invalid position"}), 400
+    else:
+        return jsonify(error="remote control not owned"),400
+@app.route("/control",methods=["POST"])
+def set_control():
+    src = request.json.get("control")
+    if src in ["POT","REMOTE"]:
+        ser_send(f"CONTROL:{src}")
+        system_state["control_requested"] = src
+        return jsonify(ok=True,requested=src)
+    return jsonify(error="invalid source"),400
 # ---------------- CONFIG ----------------
 
 SERIAL_PORT = "/dev/ttyACM0"
@@ -68,7 +84,13 @@ def serial_reader():
                         try:
                             system_state["water_level"] = float(line.split(":")[1])    
                         except ValueError:    
-                            print("[WARN] Bad LEVEL:",repr(line))
+                            print("[WARN] Unknown level from UNO:",repr(line))
+                if line.startswith("CONTROL:"):
+                    ctrl = line.split(":",1)[1].strip().upper()
+                    if ctrl in ("POT","REMOTE"):
+                        system_state["control"] = ctrl
+                    else:
+                        print("[WARN] Unknown control from UNO: ",repr(ctrl))
             time.sleep(0.05)
         except Exception as e:
             print("Serial read error:", e)
@@ -84,16 +106,12 @@ def on_message(client, userdata, msg):
     payload = msg.payload.decode()
     print(f"[MQTT] {msg.topic}: {payload}")
 
-    # Example: forward distance messages to UNO
     if msg.topic == MQTT_SUB_TOPIC and payload.startswith("distance="):
         dist = payload.split("=")[1]
-        ser.write(f"DIST:{dist}\n".encode())
-        ser.flush()
+        ser_send(f"DIST:{dist}")
 
-    # Direct command forwarding
     if msg.topic == MQTT_CMD_TOPIC:
-        ser.write((payload + "\n").encode())
-        ser.flush()
+        ser_send(payload)
 
 # ---------- CLI INPUT THREAD ----------
 
@@ -103,7 +121,7 @@ def cli_input():
         try:
             cmd = sys.stdin.readline().strip()
             if cmd:
-                ser.write((cmd + "\n").encode())
+                ser_send(cmd)
         except Exception as e:
             print("CLI error:", e)
 

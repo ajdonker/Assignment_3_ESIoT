@@ -20,11 +20,16 @@ const float L1 = 0.2;
 const float L2 = 0.3;
 const int T1 = 3000;
 const int T2 = 5000;
+
+// to prevent brownout that happened 
+// motor moves degree per degree to the point needed 100 ms a time 
 float waterLevel = -1.0;
 unsigned long belowL1Timestamp = 0;
 unsigned long lastRecvTime = 0;
 bool buttonPressed = false;
+float lastRemoteMotorPosition = 0.0;
 enum class WcsState{AUTOMATIC,MANUAL,UNCONNECTED} state;
+enum class Control{POT,REMOTE} control;
 typedef void (*wcsStateChangedCallback)(WcsState);
 wcsStateChangedCallback onWcsStateChanged;
 Button *pButton;
@@ -63,6 +68,7 @@ WcsState stringToState(const String& s) {
 }
 void onWcsStateChangedHandler(WcsState s){
   lcd.clear();
+  lcd.setCursor(2,0);
   lcd.print("STATE:");
   Serial.print("STATE:");
   switch (s)
@@ -82,7 +88,10 @@ void onWcsStateChangedHandler(WcsState s){
     Serial.println("AUTOMATIC");
     Serial.flush();
     break;
-  } 
+  }
+  lcd.setCursor(2,2);
+  lcd.print("Water Level:"); 
+  lcd.print(waterLevel);
 }
 void setState(WcsState newState) {
   if (state != newState) {
@@ -91,6 +100,36 @@ void setState(WcsState newState) {
       onWcsStateChanged(state);
     }
   }
+}
+unsigned long moveStartTime = 0;
+int startPos = 0;
+int targetPos = 0;
+float currentPos = 0.0f;
+int desiredPos;
+bool motorMoving = false;
+const int MOTOR_MAX_MOVE_TIME = 3000;
+void startMotorMove(int newTarget) {
+  if (newTarget == targetPos) return;   // prevent retrigger
+
+  startPos = currentPos;
+  targetPos = newTarget;
+  moveStartTime = millis();
+  motorMoving = true;
+}
+void updateMotor() {
+  if (!motorMoving) return;
+
+  unsigned long dt = millis() - moveStartTime;
+
+  if (dt >= MOTOR_MAX_MOVE_TIME) {
+    currentPos = targetPos;
+    motorMoving = false;
+  } else {
+    float t = (float)dt / MOTOR_MAX_MOVE_TIME;
+    currentPos = startPos + t * (targetPos - startPos);
+  }
+
+  pMotor->setPosition(currentPos);
 }
 void handleSerial()
 {
@@ -108,7 +147,6 @@ void handleSerial()
     lcd.print(waterLevel);
     Serial.print("LEVEL:");
     Serial.println(waterLevel);
-    // remove echo of water level after sensor works properly 
     lastRecvTime = millis();
 
     if (state == WcsState::UNCONNECTED) {
@@ -117,31 +155,40 @@ void handleSerial()
   }
   else if (msg.startsWith("MODE:")){
     String stateStr = msg.substring(5);
-    stateStr.trim(); // remove any whitespace/newline
+    stateStr.trim(); 
     WcsState newState = stringToState(stateStr);
-    lcd.clear();
-    lcd.print("State:");
-    lcd.print(stateToFString(newState));
-
-    setState(newState); 
-    
+    setState(newState); // callback prints to serial 
   }
-  //lcd.clear();
-  // lcd.print("State:");
-  // switch (state)
-  // {
-  // case WcsState::MANUAL:
-  //   /* code */
-  //   lcd.print("MANUAL");
-  //   break;
-  // case WcsState::UNCONNECTED:
-  //   lcd.print("UNCONNECTED");
-  //   /* code */
-  //   break;
-  // default:
-  //   lcd.print("AUTOMATIC");
-  //   break;
-  // }
+  else if(msg.startsWith("MOTOR:")){
+    // check if control is to the dbs or here 
+    int pos = msg.substring(6).toInt();
+    pos = constrain(pos,0,90);
+    if(state == WcsState::MANUAL && control == Control::REMOTE)
+    {
+      lastRemoteMotorPosition = pos;
+      Serial.println("MOTOR:");
+      Serial.println(lastRemoteMotorPosition);
+      Serial.flush();
+    }
+    else
+    {
+      Serial.println("AUTO MODE OR CONTROL NOT GAINED.MOTOR IGNORED.");
+      Serial.flush();
+    }
+  }
+  else if(msg.startsWith("CONTROL:")){
+    String who = msg.substring(8);
+    who.trim();
+    if(who.equalsIgnoreCase("POT")){
+      control = Control::POT;
+      Serial.println("CONTROL:POT");
+    }
+    else if(who.equalsIgnoreCase("REMOTE")){
+      control = Control::REMOTE;
+      Serial.println("CONTROL:REMOTE");
+    }
+    Serial.flush();
+  }
 }
 void setup() {
   Wire.begin();
@@ -151,59 +198,74 @@ void setup() {
   pPot = new Potentiometer(POT_PIN);
   pPot->sync();
   pMotor->on();
-  pMotor->setPosition(0);
-  setState(WcsState::AUTOMATIC);
-  onWcsStateChanged = onWcsStateChangedHandler;
-  lcd.clear();
   lcd.init();
   lcd.backlight();
-  lcd.print("INIT");
+  //lcd.clear();
+  lcd.setCursor(2,0);
+  lcd.print("STATE:");
+  currentPos = 0;
+  pMotor->setPosition(0);
+  control = Control::POT;
+  onWcsStateChanged = onWcsStateChangedHandler;
+  setState(WcsState::AUTOMATIC);
+  lcd.print(stateToFString(state));
   Serial.println("setup complete");
 }
 void loop() {
   
   handleSerial();
   unsigned long now = millis();
-  // if(now - lastRecvTime > T2)
-  // {
-  //   setState(WcsState::UNCONNECTED);
-  // }
   if(waterLevel > 0)
   {
     switch(state)
     {
       case WcsState::AUTOMATIC:
         if(waterLevel < L1){
-          pMotor->setPosition(0); 
+          //pMotor->setPosition(0); 
+          desiredPos = 0;
         }
         else if (waterLevel < L2)
         {
-          pMotor->setPosition(45); 
+          //pMotor->setPosition(45); 
+          desiredPos = 45;
         }
         else
         {
-          pMotor->setPosition(90); 
+          //pMotor->setPosition(90); 
+          desiredPos = 90;
         }
-        
+        startMotorMove(desiredPos);
+        updateMotor();
         if(buttonPressedOnce())
         {
+          control = Control::POT;
+          Serial.println("CONTROL:POT");
           setState(WcsState::MANUAL);
         }
       break;
       case WcsState::MANUAL:
-        pPot->sync();
-        float potReadout = pPot->getValue();
-        //Serial.print("POT READOUT:");
-        //Serial.println(potReadout);
-        // convert pot readouts into range 0-90 degrees (0-100%)
-        pMotor->setPosition(potReadout);
-        if(buttonPressedOnce())
+        if(control == Control::POT)
         {
-          setState(WcsState::AUTOMATIC);
+          pPot->sync();
+          float potReadout = pPot->getValue();
+          //pMotor->setPosition(potReadout);
+          desiredPos = potReadout;
+          if(buttonPressedOnce())
+          {
+            control = Control::POT;
+            Serial.println("CONTROL:POT");
+            setState(WcsState::AUTOMATIC);
+          }
         }
+        else
+        {
+          // control by seting desired Pos as per what is received from the slider
+          desiredPos = lastRemoteMotorPosition;
+        }
+        startMotorMove(desiredPos);
+        updateMotor();
       break;
       case WcsState::UNCONNECTED:
-        // to be set in the CUS through Serial messaging 
         pMotor->setPosition(0);
       break;
     }
