@@ -78,6 +78,7 @@ def serial_reader():
                         state = line.split(":",1)[1].strip().upper()
                         if state in ("AUTOMATIC","MANUAL"):
                             system_state["state"] = state
+                            system_state["state_requested"] = None
                         else:
                             print("[WARN] Unknown state from UNO:",repr(state))
                 if line.startswith("LEVEL:"):
@@ -89,6 +90,7 @@ def serial_reader():
                     ctrl = line.split(":",1)[1].strip().upper()
                     if ctrl in ("POT","REMOTE"):
                         system_state["control"] = ctrl
+                        system_state["state_requested"] = None
                     else:
                         print("[WARN] Unknown control from UNO: ",repr(ctrl))
             time.sleep(0.05)
@@ -104,7 +106,7 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     payload = msg.payload.decode()
-    print(f"[MQTT] {msg.topic}: {payload}")
+    #print(f"[MQTT] {msg.topic}: {payload}")
 
     if msg.topic == MQTT_SUB_TOPIC and payload.startswith("distance="):
         dist = payload.split("=")[1]

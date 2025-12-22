@@ -33,10 +33,10 @@ enum class Control{POT,REMOTE} control;
 typedef void (*wcsStateChangedCallback)(WcsState);
 wcsStateChangedCallback onWcsStateChanged;
 Button *pButton;
-bool buttonPressedOnce() {
+bool isPressedOnce() {
   static bool last = false;
   bool now = pButton->isPressed();
-
+  //Serial.println("interrupt");
   if (now && !last) {
     last = now;
     return true;
@@ -137,8 +137,9 @@ void handleSerial()
 
   String msg = Serial.readStringUntil('\n');
   msg.trim();
-  Serial.print("Msg received:");
-  Serial.println(msg);
+  // this doesnt get parsed, remove 
+  // Serial.print("Msg received:");
+  // Serial.println(msg);
   //Serial.flush();
   if (msg.startsWith("DIST:")) {
     waterLevel = msg.substring(5).toFloat();
@@ -209,34 +210,34 @@ void setup() {
   onWcsStateChanged = onWcsStateChangedHandler;
   setState(WcsState::AUTOMATIC);
   lcd.print(stateToFString(state));
+  lcd.setCursor(2,2);
+  lcd.print("WATER LEVEL:");
+  lcd.print(waterLevel);
   Serial.println("setup complete");
 }
 void loop() {
   
   handleSerial();
   unsigned long now = millis();
-  if(waterLevel > 0)
+  if(waterLevel >= 0)
   {
     switch(state)
     {
       case WcsState::AUTOMATIC:
         if(waterLevel < L1){
-          //pMotor->setPosition(0); 
           desiredPos = 0;
         }
         else if (waterLevel < L2)
         {
-          //pMotor->setPosition(45); 
           desiredPos = 45;
         }
         else
         {
-          //pMotor->setPosition(90); 
           desiredPos = 90;
         }
         startMotorMove(desiredPos);
         updateMotor();
-        if(buttonPressedOnce())
+        if(isPressedOnce())
         {
           control = Control::POT;
           Serial.println("CONTROL:POT");
@@ -247,10 +248,12 @@ void loop() {
         if(control == Control::POT)
         {
           pPot->sync();
-          float potReadout = pPot->getValue();
+          //float potReadout = pPot->getValue();
+          float potReadout = 0.8;
           //pMotor->setPosition(potReadout);
-          desiredPos = potReadout;
-          if(buttonPressedOnce())
+          // Serial.println(potReadout);
+          desiredPos = potReadout * 90; // pot readout goes from 0.0 to 1.0
+          if(isPressedOnce())
           {
             control = Control::POT;
             Serial.println("CONTROL:POT");
