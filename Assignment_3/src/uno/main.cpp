@@ -28,7 +28,7 @@ unsigned long belowL1Timestamp = 0;
 unsigned long lastRecvTime = 0;
 bool buttonPressed = false;
 float lastRemoteMotorPosition = 0.0;
-enum class WcsState{AUTOMATIC,MANUAL,UNCONNECTED} state;
+enum class WcsState{AUTOMATIC,MANUAL,UNCONNECTED,NOT_AVAILABLE} state;
 enum class Control{POT,REMOTE} control;
 typedef void (*wcsStateChangedCallback)(WcsState);
 wcsStateChangedCallback onWcsStateChanged;
@@ -55,6 +55,8 @@ __FlashStringHelper* stateToFString(WcsState s) {
       return F("MANUAL");
     case WcsState::UNCONNECTED:
       return F("UNCONNECTED");
+    case WcsState::NOT_AVAILABLE: 
+      return F("NOT_AVAILABLE");
     default:
       return F("AUTOMATIC");
   }
@@ -63,6 +65,7 @@ WcsState stringToState(const String& s) {
   if (s.equalsIgnoreCase("AUTOMATIC")) return WcsState::AUTOMATIC;
   if (s.equalsIgnoreCase("MANUAL")) return WcsState::MANUAL;
   if (s.equalsIgnoreCase("UNCONNECTED")) return WcsState::UNCONNECTED;
+  return WcsState::NOT_AVAILABLE;
   
   return WcsState::UNCONNECTED; 
 }
@@ -83,15 +86,23 @@ void onWcsStateChangedHandler(WcsState s){
     Serial.println("UNCONNECTED");
     Serial.flush();
     break;
+  case WcsState::NOT_AVAILABLE:
+    lcd.print("NOT_AVAILABLE");
+    // Serial.println("UNCONNECTED");
+    // Serial.flush();
+    break;
   default:
     lcd.print("AUTOMATIC");
     Serial.println("AUTOMATIC");
     Serial.flush();
     break;
   }
-  lcd.setCursor(2,2);
-  lcd.print("Water Level:"); 
-  lcd.print(waterLevel);
+  if(state != WcsState::UNCONNECTED && state != WcsState::NOT_AVAILABLE)
+  {
+    lcd.setCursor(2,2);
+    lcd.print("Water Level:"); 
+    lcd.print(waterLevel);
+  }
 }
 void setState(WcsState newState) {
   if (state != newState) {
@@ -134,8 +145,8 @@ void updateMotor() {
 void handleSerial()
 {
   if (!Serial.available()) return;
-
   String msg = Serial.readStringUntil('\n');
+  if (msg.length() == 0) return; 
   msg.trim();
   // this doesnt get parsed, remove 
   // Serial.print("Msg received:");
@@ -153,10 +164,14 @@ void handleSerial()
     if (state == WcsState::UNCONNECTED) {
       setState(WcsState::AUTOMATIC);
     }
+    if (state == WcsState::NOT_AVAILABLE) {
+      setState(WcsState::AUTOMATIC);
+    }
   }
   else if (msg.startsWith("MODE:")){
     String stateStr = msg.substring(5);
     stateStr.trim(); 
+    lcd.clear();
     WcsState newState = stringToState(stateStr);
     setState(newState); // callback prints to serial 
   }
@@ -167,7 +182,7 @@ void handleSerial()
     if(state == WcsState::MANUAL && control == Control::REMOTE)
     {
       lastRemoteMotorPosition = pos;
-      Serial.println("MOTOR:");
+      Serial.print("MOTOR:");
       Serial.println(lastRemoteMotorPosition);
       Serial.flush();
     }
@@ -213,12 +228,17 @@ void setup() {
   lcd.setCursor(2,2);
   lcd.print("WATER LEVEL:");
   lcd.print(waterLevel);
+  lastRecvTime = millis();
   Serial.println("setup complete");
 }
 void loop() {
   
   handleSerial();
   unsigned long now = millis();
+  if (state != WcsState::NOT_AVAILABLE &&
+  now - lastRecvTime > T2) {
+    setState(WcsState::NOT_AVAILABLE);
+  }
   if(waterLevel >= 0)
   {
     switch(state)
@@ -226,10 +246,18 @@ void loop() {
       case WcsState::AUTOMATIC:
         if(waterLevel < L1){
           desiredPos = 0;
+          belowL1Timestamp = now;
         }
         else if (waterLevel < L2)
         {
-          desiredPos = 45;
+          if(now - belowL1Timestamp > T1)
+          {
+             desiredPos = 45;
+          }
+          else
+          {
+            desiredPos = 0;
+          }
         }
         else
         {
@@ -248,8 +276,8 @@ void loop() {
         if(control == Control::POT)
         {
           pPot->sync();
-          //float potReadout = pPot->getValue();
-          float potReadout = 0.8;
+          float potReadout = pPot->getValue();
+          // float potReadout = 0.8;
           //pMotor->setPosition(potReadout);
           // Serial.println(potReadout);
           desiredPos = potReadout * 90; // pot readout goes from 0.0 to 1.0

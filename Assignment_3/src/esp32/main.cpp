@@ -8,7 +8,7 @@
 //his my own wifi network at home i guess ?? how to know what to enter here 
 const char* ssid = "NOVA_55C8"; 
 const char* password = "feel8266"; 
-
+//const char* password = "wrong_password"; 
 /* MQTT server address */
 const char* mqtt_server = "broker.mqtt-dashboard.com";
 
@@ -83,10 +83,12 @@ void setup() {
     Serial.begin(115200);
     setup_wifi();
     randomSeed(micros());
-    client.setServer(mqtt_server, 1883);
-    client.setCallback(callback);
     pinMode(RED_LED_PIN,OUTPUT);
     pinMode(GREEN_LED_PIN,OUTPUT);
+    digitalWrite(RED_LED_PIN,HIGH);
+    digitalWrite(GREEN_LED_PIN,LOW);
+    client.setServer(mqtt_server, 1883);
+    client.setCallback(callback);
 }
 
 void loop() {
